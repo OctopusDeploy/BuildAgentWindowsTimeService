@@ -1,0 +1,78 @@
+# Build output
+bin/
+obj/
+out/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Test results
+TestResults/
+*.trx
+*.coveragexml
+coverage*/
+[Cc]overage/
+
+# Publish output
+publish/
+*.pubxml
+*.pubxml.user
+
+# Entity Framework migrations (optional — remove if you want to track migrations)
+# Migrations/
+
+# Log files
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Roslyn / Analyzers
+*.aps
+
+# ASP.NET
+wwwroot/lib/
+
+# Azure Functions
+local.settings.json
+
+# Secrets & environment
+*.env
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+# Crash dumps
+*.dmp
+
+# Claude
+.claude
