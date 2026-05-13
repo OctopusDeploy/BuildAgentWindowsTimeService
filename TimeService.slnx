@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/TimeService/TimeService.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TimeService.IntegrationTests/TimeService.IntegrationTests.csproj" />
+  </Folder>
 </Solution>
