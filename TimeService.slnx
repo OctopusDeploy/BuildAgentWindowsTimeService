@@ -1,8 +1,9 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/TimeService/TimeService.csproj" />
+    <Project Path="src/OctopusTimeService/OctopusTimeService.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TimeService.IntegrationTests/TimeService.IntegrationTests.csproj" />
+    <Project Path="tests/TimeService.Tests/TimeService.Tests.csproj" />
   </Folder>
 </Solution>

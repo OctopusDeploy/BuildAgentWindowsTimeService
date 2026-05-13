@@ -20,7 +20,7 @@ public sealed class PublishedExeFixture : IAsyncLifetime
         }
 
         var projectPath = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "TimeService", "TimeService.csproj"));
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "OctopusTimeService", "OctopusTimeService.csproj"));
 
         if (!File.Exists(projectPath))
             throw new FileNotFoundException($"Could not locate main project at {projectPath}");
@@ -36,6 +36,8 @@ public sealed class PublishedExeFixture : IAsyncLifetime
         psi.ArgumentList.Add(projectPath);
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("Release");
+        psi.ArgumentList.Add("-r");
+        psi.ArgumentList.Add("win-x64");
 
         // The AOT toolchain shells out to vswhere.exe to locate the Windows SDK.
         // Make sure its directory is on PATH for the child process.
