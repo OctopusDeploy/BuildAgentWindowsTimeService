@@ -1,13 +1,17 @@
 using System.Diagnostics;
+using Microsoft.Win32;
 
 namespace TimeService;
 
 internal static class ServiceInstaller
 {
+    private const string ServicesRegistryRoot = @"SYSTEM\CurrentControlSet\Services";
+
     public static int Install(ReadOnlySpan<string> args)
     {
         var serviceName = ServiceDefaults.ServiceName;
         string? executablePath = null;
+        var dependents = new List<string>();
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -21,6 +25,10 @@ internal static class ServiceInstaller
                 case "--exe":
                     if (!TryGetValue(args, ref i, out var exeValue)) return ArgError("--executable requires a value");
                     executablePath = exeValue;
+                    break;
+                case "--dependent":
+                    if (!TryGetValue(args, ref i, out var depValue)) return ArgError("--dependent requires a value");
+                    dependents.Add(depValue);
                     break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
@@ -39,6 +47,21 @@ internal static class ServiceInstaller
         {
             Console.Error.WriteLine($"Executable not found: {executablePath}");
             return 1;
+        }
+
+        // Pre-validate dependents before we make any changes.
+        foreach (var dep in dependents)
+        {
+            if (string.Equals(dep, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine($"--dependent '{dep}' cannot reference the service being installed.");
+                return 2;
+            }
+            if (!ServiceExists(dep))
+            {
+                Console.Error.WriteLine($"Dependent service '{dep}' does not exist.");
+                return 1;
+            }
         }
 
         Console.WriteLine($"Installing service '{serviceName}' from '{executablePath}'");
@@ -62,6 +85,20 @@ internal static class ServiceInstaller
         }
 
         Console.WriteLine($"Service '{serviceName}' installed.");
+
+        var depFailures = 0;
+        foreach (var dep in dependents)
+        {
+            if (!AddDependency(target: dep, prerequisite: serviceName))
+                depFailures++;
+        }
+
+        if (depFailures > 0)
+        {
+            Console.Error.WriteLine($"Service installed but {depFailures} dependency edit(s) failed.");
+            return 1;
+        }
+
         return 0;
     }
 
@@ -96,6 +133,58 @@ internal static class ServiceInstaller
 
         Console.WriteLine($"Service '{serviceName}' uninstalled.");
         return 0;
+    }
+
+    private static bool ServiceExists(string serviceName)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey($@"{ServicesRegistryRoot}\{serviceName}");
+        return key is not null;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="prerequisite"/> to <paramref name="target"/>'s DependOnService list.
+    /// Reads the existing list from the registry, merges, then writes via sc.exe so SCM picks
+    /// up the change immediately (a raw registry write wouldn't notify SCM).
+    /// </summary>
+    private static bool AddDependency(string target, string prerequisite)
+    {
+        string[] existing;
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ServicesRegistryRoot}\{target}");
+            if (key is null)
+            {
+                Console.Error.WriteLine($"  Could not read registry for service '{target}'.");
+                return false;
+            }
+            existing = (string[]?)key.GetValue("DependOnService") ?? Array.Empty<string>();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  Error reading '{target}' dependencies: {ex.Message}");
+            return false;
+        }
+
+        if (Array.Exists(existing, s => string.Equals(s, prerequisite, StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine($"  '{target}' already depends on '{prerequisite}'.");
+            return true;
+        }
+
+        // sc.exe `depend=` takes services separated by '/'.
+        var merged = existing.Length == 0
+            ? prerequisite
+            : string.Join("/", existing) + "/" + prerequisite;
+
+        var exitCode = RunSc(["config", target, "depend=", merged]);
+        if (exitCode != 0)
+        {
+            Console.Error.WriteLine($"  sc.exe config failed for '{target}' (exit {exitCode}).");
+            return false;
+        }
+
+        Console.WriteLine($"  '{target}' now depends on '{prerequisite}'.");
+        return true;
     }
 
     private static bool TryGetValue(ReadOnlySpan<string> args, ref int i, out string value)

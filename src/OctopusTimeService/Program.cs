@@ -1,5 +1,8 @@
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Logging.EventLog;
 using TimeService;
+using TimeService.Ntp;
+using TimeService.Startup;
 
 if (args.Length == 0)
 {
@@ -33,6 +36,11 @@ static int RunAsService(string[] forwardedArgs)
     {
         options.ServiceName = ServiceDefaults.ServiceName;
     });
+    // AddWindowsService defaults the EventLog provider to Warning+; lower it so
+    // Information-level drift measurements reach the Windows Event Log.
+    builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
+    builder.Services.AddSingleton(_ => new NtpClient());
+    builder.Services.AddSingleton<StartupSequence>();
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;
@@ -41,6 +49,8 @@ static int RunAsService(string[] forwardedArgs)
 static int RunAsConsole(string[] forwardedArgs)
 {
     var builder = Host.CreateApplicationBuilder(forwardedArgs);
+    builder.Services.AddSingleton(_ => new NtpClient());
+    builder.Services.AddSingleton<StartupSequence>();
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;
@@ -56,6 +66,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  OctopusTimeService install [flags]    Register as a Windows service.");
     writer.WriteLine("                                          --serviceName <name>  (default: OctopusTimeService)");
     writer.WriteLine("                                          --executable <path>   (default: current exe)");
+    writer.WriteLine("                                          --dependent <name>    target service to make depend on us");
+    writer.WriteLine("                                                                (may be specified multiple times)");
     writer.WriteLine("  OctopusTimeService uninstall [flags]  Unregister the Windows service.");
     writer.WriteLine("                                          --serviceName <name>  (default: OctopusTimeService)");
 }

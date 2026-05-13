@@ -31,7 +31,10 @@ public class ExeSmokeTests(PublishedExeFixture fixture)
         var sawWorkerLog = false;
         proc.OutputDataReceived += (_, e) =>
         {
-            if (e.Data is not null && e.Data.Contains("Worker running at"))
+            if (e.Data is null) return;
+            // Accept either a successful drift measurement or a failure log
+            // (CI agents without outbound UDP/123 still exercise the worker code path).
+            if (e.Data.Contains("Clock drift") || e.Data.Contains("Failed to measure clock drift"))
                 sawWorkerLog = true;
         };
         proc.BeginOutputReadLine();
@@ -55,7 +58,7 @@ public class ExeSmokeTests(PublishedExeFixture fixture)
             }
         }
 
-        Assert.True(sawWorkerLog, "Expected 'Worker running at' in stdout but never saw it.");
+        Assert.True(sawWorkerLog, "Expected a clock-drift log line in stdout but never saw one.");
     }
 
     [Theory]
