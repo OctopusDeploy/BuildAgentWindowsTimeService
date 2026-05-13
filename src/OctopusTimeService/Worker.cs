@@ -1,3 +1,4 @@
+using TimeService.Logging;
 using TimeService.Ntp;
 using TimeService.Startup;
 
@@ -13,8 +14,7 @@ public class Worker(
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("{ServiceName} starting (NTP server: {Server}, interval: {Interval})",
-            ServiceDefaults.ServiceName, ntpClient.Server, MeasurementInterval);
+        Log.ServiceStarting(logger, ServiceDefaults.ServiceName, ntpClient.Server, MeasurementInterval);
 
         // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
         // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
@@ -34,9 +34,7 @@ public class Worker(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Startup sequence did not complete cleanly within {Budget}; continuing service start regardless.",
-                StartupBudget);
+            Log.StartupSequenceFailed(logger, StartupBudget, ex);
         }
 
         await base.StartAsync(cancellationToken);
@@ -44,9 +42,9 @@ public class Worker(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("{ServiceName} stopping", ServiceDefaults.ServiceName);
+        Log.ServiceStopping(logger, ServiceDefaults.ServiceName);
         await base.StopAsync(cancellationToken);
-        logger.LogInformation("{ServiceName} stopped", ServiceDefaults.ServiceName);
+        Log.ServiceStopped(logger, ServiceDefaults.ServiceName);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -65,9 +63,7 @@ public class Worker(
         try
         {
             var result = await ntpClient.MeasureDriftAsync(cancellationToken);
-            logger.LogInformation(
-                "Clock drift against {Server}: {Drift} (±{Margin})",
-                ntpClient.Server, result.Drift, result.MarginOfError);
+            Log.ClockDrift(logger, ntpClient.Server, result.Drift, result.MarginOfError);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -75,7 +71,7 @@ public class Worker(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to measure clock drift against {Server}", ntpClient.Server);
+            Log.ClockDriftFailed(logger, ntpClient.Server, ex);
         }
     }
 }

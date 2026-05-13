@@ -1,6 +1,7 @@
 using System.ServiceProcess;
 using Microsoft.Win32;
 using Octopus.Shellfish;
+using TimeService.Logging;
 
 namespace TimeService.Startup;
 
@@ -33,7 +34,7 @@ internal sealed class WindowsServiceOps(ILogger logger)
 
             if (sc.StartType == ServiceStartMode.Disabled)
             {
-                logger.LogInformation("Service '{Service}' is Disabled; switching to Manual", serviceName);
+                Log.EnableDisabledService(logger, serviceName);
                 if (!await SetStartTypeAsync(serviceName, "demand", cancellationToken))
                     return false;
                 sc.Refresh();
@@ -42,22 +43,20 @@ internal sealed class WindowsServiceOps(ILogger logger)
             switch (sc.Status)
             {
                 case ServiceControllerStatus.Running:
-                    logger.LogInformation("Service '{Service}' is already running", serviceName);
+                    Log.ServiceAlreadyRunning(logger, serviceName);
                     return true;
 
                 case ServiceControllerStatus.StartPending:
-                    logger.LogInformation("Service '{Service}' is starting; waiting for Running", serviceName);
+                    Log.ServiceStartPending(logger, serviceName);
                     return await WaitForStatusAsync(sc, ServiceControllerStatus.Running, cancellationToken);
 
                 case ServiceControllerStatus.Stopped:
-                    logger.LogInformation("Starting service '{Service}'", serviceName);
+                    Log.StartingService(logger, serviceName);
                     sc.Start();
                     return await WaitForStatusAsync(sc, ServiceControllerStatus.Running, cancellationToken);
 
                 default:
-                    logger.LogInformation(
-                        "Service '{Service}' is in transient state {Status}; waiting then re-evaluating",
-                        serviceName, sc.Status);
+                    Log.ServiceTransient(logger, serviceName, sc.Status);
                     // Wait for things to settle, then try again on a refreshed view.
                     await Task.Delay(StatusPollInterval, cancellationToken);
                     return await EnsureRunningAsync(serviceName, cancellationToken);
@@ -65,7 +64,7 @@ internal sealed class WindowsServiceOps(ILogger logger)
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to ensure '{Service}' is running", serviceName);
+            Log.EnsureRunningFailed(logger, serviceName, ex);
             return false;
         }
     }
@@ -86,19 +85,19 @@ internal sealed class WindowsServiceOps(ILogger logger)
                 sc.Refresh();
                 if (sc.Status != ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.StopPending)
                 {
-                    logger.LogInformation("Stopping service '{Service}'", serviceName);
+                    Log.StoppingService(logger, serviceName);
                     if (sc.CanStop) sc.Stop();
                     if (!await WaitForStatusAsync(sc, ServiceControllerStatus.Stopped, cancellationToken))
                         return false;
                 }
             }
 
-            logger.LogInformation("Disabling service '{Service}'", serviceName);
+            Log.DisablingService(logger, serviceName);
             return await SetStartTypeAsync(serviceName, "disabled", cancellationToken);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to stop/disable '{Service}'", serviceName);
+            Log.StopAndDisableFailed(logger, serviceName, ex);
             return false;
         }
     }
@@ -115,8 +114,7 @@ internal sealed class WindowsServiceOps(ILogger logger)
             if (sc.Status == target) return true;
             await Task.Delay(StatusPollInterval, cancellationToken);
         }
-        logger.LogError("Service '{Service}' did not reach {Target} within {Timeout}",
-            sc.ServiceName, target, StatusTimeout);
+        Log.ServiceStatusTimeout(logger, sc.ServiceName, target, StatusTimeout);
         return false;
     }
 
@@ -124,14 +122,13 @@ internal sealed class WindowsServiceOps(ILogger logger)
     {
         var result = await new ShellCommand("sc.exe")
             .WithArguments(["config", serviceName, "start=", scStartMode])
-            .WithStdOutTarget(line => logger.LogDebug("[sc] {Line}", line))
-            .WithStdErrTarget(line => logger.LogWarning("[sc] {Line}", line))
+            .WithStdOutTarget(line => Log.ScStdOut(logger, line))
+            .WithStdErrTarget(line => Log.ScStdErr(logger, line))
             .ExecuteAsync(cancellationToken);
 
         if (result.ExitCode != 0)
         {
-            logger.LogError("sc config '{Service}' start= {Mode} failed (exit {ExitCode})",
-                serviceName, scStartMode, result.ExitCode);
+            Log.ScConfigFailed(logger, serviceName, scStartMode, result.ExitCode);
             return false;
         }
         return true;
