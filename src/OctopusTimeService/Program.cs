@@ -70,4 +70,6 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("                                                                (may be specified multiple times)");
     writer.WriteLine("  OctopusTimeService uninstall [flags]  Unregister the Windows service.");
     writer.WriteLine("                                          --serviceName <name>  (default: OctopusTimeService)");
+    writer.WriteLine("                                          --dependent <name>    target service to strip us from");
+    writer.WriteLine("                                                                (may be specified multiple times)");
 }

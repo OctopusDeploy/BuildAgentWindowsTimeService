@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using System.Security.Principal;
 using System.ServiceProcess;
+using Octopus.Shellfish;
 
 namespace TimeService.IntegrationTests;
 
@@ -78,6 +78,85 @@ public class InstallUninstallTests(PublishedExeFixture fixture)
     }
 
     [SkippableFact]
+    public void Uninstall_with_dependent_flag_removes_our_service_from_target_dependency_list()
+    {
+        Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");
+
+        var targetServiceName = $"OctopusTimeService_Target_{Guid.NewGuid():N}";
+        var ourServiceName = $"OctopusTimeService_Test_{Guid.NewGuid():N}";
+        var targetInstalled = false;
+        var ourInstalled = false;
+
+        try
+        {
+            // Setup: install both, wiring target → us.
+            Assert.Equal(0, RunExe(fixture.ExePath, ["install", "--serviceName", targetServiceName]));
+            targetInstalled = true;
+            Assert.Equal(0, RunExe(fixture.ExePath,
+                ["install", "--serviceName", ourServiceName, "--dependent", targetServiceName]));
+            ourInstalled = true;
+
+            // Precondition: target depends on our service.
+            using (var target = new ServiceController(targetServiceName))
+            {
+                var depsBefore = target.ServicesDependedOn.Select(s => s.ServiceName).ToArray();
+                Assert.Contains(depsBefore,
+                    n => string.Equals(n, ourServiceName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Act: uninstall with --dependent should strip our entry from target's deps,
+            // then remove our service.
+            Assert.Equal(0, RunExe(fixture.ExePath,
+                ["uninstall", "--serviceName", ourServiceName, "--dependent", targetServiceName]));
+            ourInstalled = false;
+
+            Assert.False(ServiceExists(ourServiceName), "Our service should be gone after uninstall.");
+
+            using (var target = new ServiceController(targetServiceName))
+            {
+                var depsAfter = target.ServicesDependedOn.Select(s => s.ServiceName).ToArray();
+                Assert.DoesNotContain(depsAfter,
+                    n => string.Equals(n, ourServiceName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        finally
+        {
+            if (ourInstalled)
+                RunExe(fixture.ExePath, ["uninstall", "--serviceName", ourServiceName]);
+            if (targetInstalled)
+                RunExe(fixture.ExePath, ["uninstall", "--serviceName", targetServiceName]);
+        }
+    }
+
+    [SkippableFact]
+    public void Uninstall_with_missing_dependent_target_logs_warning_and_still_uninstalls()
+    {
+        Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");
+
+        var ourServiceName = $"OctopusTimeService_Test_{Guid.NewGuid():N}";
+        var bogusDep = $"DoesNotExist_{Guid.NewGuid():N}";
+        var installed = false;
+
+        try
+        {
+            Assert.Equal(0, RunExe(fixture.ExePath, ["install", "--serviceName", ourServiceName]));
+            installed = true;
+
+            // Pointing --dependent at a non-existent service should not block uninstall.
+            Assert.Equal(0, RunExe(fixture.ExePath,
+                ["uninstall", "--serviceName", ourServiceName, "--dependent", bogusDep]));
+            installed = false;
+
+            Assert.False(ServiceExists(ourServiceName));
+        }
+        finally
+        {
+            if (installed)
+                RunExe(fixture.ExePath, ["uninstall", "--serviceName", ourServiceName]);
+        }
+    }
+
+    [SkippableFact]
     public void Install_rejects_dependent_that_does_not_exist()
     {
         Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");
@@ -94,26 +173,11 @@ public class InstallUninstallTests(PublishedExeFixture fixture)
             "Our service should not have been registered when --dependent validation fails.");
     }
 
-    private static int RunExe(string exePath, string[] args)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = exePath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start {exePath}");
-
-        proc.StandardOutput.ReadToEnd();
-        proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-        return proc.ExitCode;
-    }
+    private static int RunExe(string exePath, string[] args) =>
+        new ShellCommand(exePath)
+            .WithArguments(args)
+            .Execute()
+            .ExitCode;
 
     private static bool ServiceExists(string serviceName)
     {

@@ -1,4 +1,5 @@
-using System.Diagnostics;
+using System.Text;
+using Octopus.Shellfish;
 
 namespace TimeService.IntegrationTests;
 
@@ -25,41 +26,31 @@ public sealed class PublishedExeFixture : IAsyncLifetime
         if (!File.Exists(projectPath))
             throw new FileNotFoundException($"Could not locate main project at {projectPath}");
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        psi.ArgumentList.Add("publish");
-        psi.ArgumentList.Add(projectPath);
-        psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add("Release");
-        psi.ArgumentList.Add("-r");
-        psi.ArgumentList.Add("win-x64");
+        var stdout = new StringBuilder();
+        var stderr = new StringBuilder();
+
+        var command = new ShellCommand("dotnet")
+            .WithArguments(["publish", projectPath, "-c", "Release", "-r", "win-x64"])
+            .WithStdOutTarget(stdout)
+            .WithStdErrTarget(stderr);
 
         // The AOT toolchain shells out to vswhere.exe to locate the Windows SDK.
-        // Make sure its directory is on PATH for the child process.
+        // Shellfish merges these on top of the parent process's environment.
         var vswhereDir = @"C:\Program Files (x86)\Microsoft Visual Studio\Installer";
         if (Directory.Exists(vswhereDir))
         {
-            var currentPath = psi.Environment["PATH"] ?? string.Empty;
-            psi.Environment["PATH"] = vswhereDir + Path.PathSeparator + currentPath;
+            var currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            command = command.WithEnvironmentVariables(new Dictionary<string, string>
+            {
+                ["PATH"] = vswhereDir + Path.PathSeparator + currentPath,
+            });
         }
 
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start dotnet publish");
+        var result = await command.ExecuteAsync();
 
-        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-        var stderrTask = proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-
-        if (proc.ExitCode != 0)
+        if (result.ExitCode != 0)
             throw new InvalidOperationException(
-                $"dotnet publish failed (exit {proc.ExitCode}).\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
+                $"dotnet publish failed (exit {result.ExitCode}).\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
 
         var publishDir = Path.GetFullPath(Path.Combine(
             Path.GetDirectoryName(projectPath)!,

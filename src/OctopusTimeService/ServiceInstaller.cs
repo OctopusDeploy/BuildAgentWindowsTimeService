@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Microsoft.Win32;
+using Octopus.Shellfish;
 
 namespace TimeService;
 
@@ -67,7 +67,7 @@ internal static class ServiceInstaller
         Console.WriteLine($"Installing service '{serviceName}' from '{executablePath}'");
 
         // The ImagePath stored in the registry must be quoted so SCM doesn't split on spaces.
-        // We pass the value with embedded quote chars; ProcessStartInfo.ArgumentList escapes them.
+        // We pass the value with embedded quote chars; Shellfish escapes them when constructing argv.
         var quotedExePath = $"\"{executablePath}\"";
         var scArgs = new[]
         {
@@ -105,6 +105,7 @@ internal static class ServiceInstaller
     public static int Uninstall(ReadOnlySpan<string> args)
     {
         var serviceName = ServiceDefaults.ServiceName;
+        var dependents = new List<string>();
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -114,12 +115,25 @@ internal static class ServiceInstaller
                     if (!TryGetValue(args, ref i, out var nameValue)) return ArgError("--serviceName requires a value");
                     serviceName = nameValue;
                     break;
+                case "--dependent":
+                    if (!TryGetValue(args, ref i, out var depValue)) return ArgError("--dependent requires a value");
+                    dependents.Add(depValue);
+                    break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
             }
         }
 
         Console.WriteLine($"Uninstalling service '{serviceName}'");
+
+        // Strip our service from each target's dependency list before deleting,
+        // so we never leave a dangling reference. Missing targets are warnings, not errors.
+        var depFailures = 0;
+        foreach (var dep in dependents)
+        {
+            if (!RemoveDependency(target: dep, prerequisite: serviceName))
+                depFailures++;
+        }
 
         // Best-effort stop first; ignore failure (service may already be stopped).
         RunSc(["stop", serviceName]);
@@ -132,6 +146,13 @@ internal static class ServiceInstaller
         }
 
         Console.WriteLine($"Service '{serviceName}' uninstalled.");
+
+        if (depFailures > 0)
+        {
+            Console.Error.WriteLine($"Service uninstalled but {depFailures} dependency edit(s) failed.");
+            return 1;
+        }
+
         return 0;
     }
 
@@ -187,6 +208,59 @@ internal static class ServiceInstaller
         return true;
     }
 
+    /// <summary>
+    /// Removes <paramref name="prerequisite"/> from <paramref name="target"/>'s DependOnService list.
+    /// No-op if the target doesn't exist or doesn't currently depend on us. Returns true on success
+    /// or no-op; false only when an actual edit attempt failed.
+    /// </summary>
+    private static bool RemoveDependency(string target, string prerequisite)
+    {
+        if (!ServiceExists(target))
+        {
+            Console.WriteLine($"  Dependent service '{target}' does not exist; nothing to clean up.");
+            return true;
+        }
+
+        string[] existing;
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ServicesRegistryRoot}\{target}");
+            if (key is null)
+            {
+                Console.Error.WriteLine($"  Could not read registry for service '{target}'.");
+                return false;
+            }
+            existing = (string[]?)key.GetValue("DependOnService") ?? Array.Empty<string>();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  Error reading '{target}' dependencies: {ex.Message}");
+            return false;
+        }
+
+        var remaining = Array.FindAll(existing,
+            s => !string.Equals(s, prerequisite, StringComparison.OrdinalIgnoreCase));
+
+        if (remaining.Length == existing.Length)
+        {
+            Console.WriteLine($"  '{target}' did not depend on '{prerequisite}'; nothing to remove.");
+            return true;
+        }
+
+        // sc.exe expects a single token here: '/' on its own clears the dependency list.
+        var depArg = remaining.Length == 0 ? "/" : string.Join("/", remaining);
+
+        var exitCode = RunSc(["config", target, "depend=", depArg]);
+        if (exitCode != 0)
+        {
+            Console.Error.WriteLine($"  sc.exe config failed for '{target}' (exit {exitCode}).");
+            return false;
+        }
+
+        Console.WriteLine($"  '{target}' no longer depends on '{prerequisite}'.");
+        return true;
+    }
+
     private static bool TryGetValue(ReadOnlySpan<string> args, ref int i, out string value)
     {
         if (i + 1 >= args.Length)
@@ -205,27 +279,11 @@ internal static class ServiceInstaller
         return 2;
     }
 
-    private static int RunSc(string[] scArgs)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = "sc.exe",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var a in scArgs) psi.ArgumentList.Add(a);
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start sc.exe");
-
-        var stdout = proc.StandardOutput.ReadToEnd();
-        var stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-
-        if (!string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
-        if (!string.IsNullOrWhiteSpace(stderr)) Console.Error.WriteLine(stderr.TrimEnd());
-
-        return proc.ExitCode;
-    }
+    private static int RunSc(string[] scArgs) =>
+        new ShellCommand("sc.exe")
+            .WithArguments(scArgs)
+            .WithStdOutTarget(Console.Out.WriteLine)
+            .WithStdErrTarget(Console.Error.WriteLine)
+            .Execute()
+            .ExitCode;
 }

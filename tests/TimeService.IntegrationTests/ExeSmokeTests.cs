@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text;
+using Octopus.Shellfish;
 
 namespace TimeService.IntegrationTests;
 
@@ -15,35 +17,25 @@ public class ExeSmokeTests(PublishedExeFixture fixture)
 
     private async Task AssertExeEmitsWorkerLog(string[] args)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fixture.ExePath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start exe");
-
+        Process? capturedProc = null;
         var sawWorkerLog = false;
-        proc.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is null) return;
-            // Accept either a successful drift measurement or a failure log
-            // (CI agents without outbound UDP/123 still exercise the worker code path).
-            if (e.Data.Contains("Clock drift") || e.Data.Contains("Failed to measure clock drift"))
-                sawWorkerLog = true;
-        };
-        proc.BeginOutputReadLine();
-        proc.BeginErrorReadLine();
+
+        var shellTask = new ShellCommand(fixture.ExePath)
+            .WithArguments(args)
+            .CaptureProcess(p => capturedProc = p)
+            .WithStdOutTarget(line =>
+            {
+                // Accept either a successful drift measurement or a failure log
+                // (CI agents without outbound UDP/123 still exercise the worker code path).
+                if (line.Contains("Clock drift") || line.Contains("Failed to measure clock drift"))
+                    sawWorkerLog = true;
+            })
+            .ExecuteAsync();
 
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            while (!sawWorkerLog && !cts.IsCancellationRequested && !proc.HasExited)
+            while (!sawWorkerLog && !cts.IsCancellationRequested && capturedProc?.HasExited != true)
             {
                 await Task.Delay(100, cts.Token);
             }
@@ -51,11 +43,11 @@ public class ExeSmokeTests(PublishedExeFixture fixture)
         catch (OperationCanceledException) { }
         finally
         {
-            if (!proc.HasExited)
+            if (capturedProc is { HasExited: false })
             {
-                proc.Kill(entireProcessTree: true);
-                await proc.WaitForExitAsync();
+                capturedProc.Kill(entireProcessTree: true);
             }
+            try { await shellTask; } catch { /* exit-on-kill is expected */ }
         }
 
         Assert.True(sawWorkerLog, "Expected a clock-drift log line in stdout but never saw one.");
@@ -88,22 +80,13 @@ public class ExeSmokeTests(PublishedExeFixture fixture)
 
     private (int ExitCode, string StdOut, string StdErr) RunExeToCompletion(string[] args)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fixture.ExePath,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start exe");
-
-        var stdout = proc.StandardOutput.ReadToEnd();
-        var stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-        return (proc.ExitCode, stdout, stderr);
+        var stdout = new StringBuilder();
+        var stderr = new StringBuilder();
+        var result = new ShellCommand(fixture.ExePath)
+            .WithArguments(args)
+            .WithStdOutTarget(stdout)
+            .WithStdErrTarget(stderr)
+            .Execute();
+        return (result.ExitCode, stdout.ToString(), stderr.ToString());
     }
 }
