@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging.EventLog;
 using TimeService;
@@ -36,6 +37,13 @@ static int RunAsService(string[] forwardedArgs)
     {
         options.ServiceName = ServiceDefaults.ServiceName;
     });
+    // Defer SCM's SERVICE_RUNNING signal until hosted-service StartAsync has finished,
+    // so the startup sequence completes before the service is reported as running.
+    if (WindowsServiceHelpers.IsWindowsService())
+    {
+        builder.Services.Replace(
+            ServiceDescriptor.Singleton<IHostLifetime, StartupAwareWindowsServiceLifetime>());
+    }
     // AddWindowsService defaults the EventLog provider to Warning+; lower it so
     // Information-level drift measurements reach the Windows Event Log.
     builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
