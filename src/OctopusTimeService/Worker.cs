@@ -9,6 +9,7 @@ public class Worker(
     StartupSequence startupSequence) : BackgroundService
 {
     private static readonly TimeSpan MeasurementInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan StartupBudget = TimeSpan.FromMinutes(3);
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -17,7 +18,26 @@ public class Worker(
 
         // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
         // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
-        await startupSequence.RunAsync(cancellationToken);
+        //
+        // A failed or hung startup sequence must not prevent the service from coming up,
+        // so we cap it at StartupBudget and swallow anything that isn't a real shutdown.
+        using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        startupCts.CancelAfter(StartupBudget);
+        try
+        {
+            await startupSequence.RunAsync(startupCts.Token);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host is genuinely shutting down — propagate so the host can abort start.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Startup sequence did not complete cleanly within {Budget}; continuing service start regardless.",
+                StartupBudget);
+        }
 
         await base.StartAsync(cancellationToken);
     }
