@@ -1,0 +1,93 @@
+name: "Build, Test and Release"
+
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - '**'
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Weekly (on Monday) 6am australian/brisbane time (8pm UTC)
+    # Note that although it only runs once a week, we still use the -nightly suffix to align with our other repos
+    - cron: '0 20 * * 1'
+  workflow_dispatch:
+
+env:
+  OCTOVERSION_CurrentBranch: ${{ github.head_ref || github.ref }}
+
+jobs:
+  build:
+    name: "Build, Test and Release" # Branch protections required check matches against this
+    runs-on: windows-latest
+    permissions:
+      id-token: write # Required to obtain the ID token from GitHub Actions
+      contents: write # Read required to check out code, write to create Git tags & releases
+      checks: write # Required for test-reporter
+    steps:
+      # Must clone the entire history for OctoVersion to work
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Append OCTOVERSION_CurrentBranch with -nightly-<timestamp> (for scheduled)
+        if: github.event_name == 'schedule'
+        run: echo "OCTOVERSION_CurrentBranch=${{ env.OCTOVERSION_CurrentBranch }}-nightly-$(Get-Date -Format 'yyyyMMddHHmmss')" >> $env:GITHUB_ENV
+
+      - name: Install OctoVersion
+        run: dotnet tool install --global Octopus.OctoVersion.Tool
+
+      - name: Determine version
+        id: version
+        run: ~/.dotnet/tools/octoversion --DetectEnvironment true
+
+      - name: Restore
+        run: dotnet restore TimeService.slnx
+
+      - name: Build
+        run: dotnet build TimeService.slnx --configuration Release --no-restore /p:Version=${{ steps.version.outputs.octoversion_fullsemver }} /p:AssemblyVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:FileVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:InformationalVersion=${{ steps.version.outputs.octoversion_informationalversion }}
+
+      - name: Unit tests
+        run: dotnet test tests/TimeService.Tests/TimeService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=unit-tests.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      # Integration tests publish the AOT exe via PublishedExeFixture and exercise it.
+      # InstallUninstallTests self-skip when the runner isn't elevated.
+      - name: Integration tests
+        run: dotnet test tests/TimeService.IntegrationTests/TimeService.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=integration-tests.trx" --results-directory ${{ github.workspace }}/TestResults
+
+      - name: Publish test results
+        uses: dorny/test-reporter@6e6a65b7a0bd2c9197df7d0ae36ac5cee784230c # v2.0.0
+        if: success() || failure()
+        with:
+          name: Test Results
+          path: TestResults/*.trx
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Publish AOT exe
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: dotnet publish src/OctopusTimeService/OctopusTimeService.csproj --configuration Release --runtime win-x64 /p:Version=${{ steps.version.outputs.octoversion_fullsemver }} /p:AssemblyVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:FileVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:InformationalVersion=${{ steps.version.outputs.octoversion_informationalversion }} --output artifacts/publish
+
+      # Only create releases from main branch, not for scheduled or manual runs.
+      - name: Package release zip
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: Compress-Archive -Path artifacts/publish/*.exe -DestinationPath artifacts/OctopusTimeService.${{ steps.version.outputs.octoversion_fullsemver }}.zip
+
+      # Only create releases from main branch, not for scheduled or manual runs.
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ steps.version.outputs.octoversion_fullsemver }}
+          name: ${{ steps.version.outputs.octoversion_fullsemver }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ contains(steps.version.outputs.octoversion_fullsemver, '-') }}
+          generate_release_notes: true
+          files: artifacts/OctopusTimeService.${{ steps.version.outputs.octoversion_fullsemver }}.zip

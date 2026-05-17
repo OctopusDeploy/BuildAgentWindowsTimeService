@@ -9,6 +9,10 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishAot>true</PublishAot>
     <RootNamespace>TimeService</RootNamespace>
+    <AssemblyTitle>Octopus Time Service</AssemblyTitle>
+    <Product>Octopus Time Service</Product>
+    <Company>Octopus Deploy</Company>
+    <Copyright>Copyright © Octopus Deploy Pty. Ltd.</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
