@@ -72,12 +72,14 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  OctopusTimeService                    Run as Windows service (when launched by SCM).");
     writer.WriteLine("  OctopusTimeService run                Run the worker in console mode.");
     writer.WriteLine("  OctopusTimeService install [flags]    Register as a Windows service.");
-    writer.WriteLine("                                          --serviceName <name>  (default: OctopusTimeService)");
-    writer.WriteLine("                                          --executable <path>   (default: current exe)");
-    writer.WriteLine("                                          --dependent <name>    target service to make depend on us");
-    writer.WriteLine("                                                                (may be specified multiple times)");
+    writer.WriteLine("                                          --serviceName <name>      (default: OctopusTimeService)");
+    writer.WriteLine("                                          --executable <path>       (default: current exe)");
+    writer.WriteLine("                                          --dependent <name>        target service to make depend on us");
+    writer.WriteLine("                                                                    (may be specified multiple times)");
+    writer.WriteLine("                                          --ntpCheckInterval <sec>  NTP drift-check interval (default: 30)");
     writer.WriteLine("  OctopusTimeService uninstall [flags]  Unregister the Windows service.");
-    writer.WriteLine("                                          --serviceName <name>  (default: OctopusTimeService)");
-    writer.WriteLine("                                          --dependent <name>    target service to strip us from");
-    writer.WriteLine("                                                                (may be specified multiple times)");
+    writer.WriteLine("                                          --serviceName <name>      (default: OctopusTimeService)");
+    writer.WriteLine("                                          --dependent <name>        target service to strip us from");
+    writer.WriteLine("                                                                    (may be specified multiple times;");
+    writer.WriteLine("                                                                    if omitted, recovered from registry)");
 }

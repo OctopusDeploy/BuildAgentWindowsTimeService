@@ -9,12 +9,14 @@ public class Worker(
     NtpClient ntpClient,
     StartupSequence startupSequence) : BackgroundService
 {
-    private static readonly TimeSpan MeasurementInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StartupBudget = TimeSpan.FromMinutes(3);
+
+    private readonly TimeSpan measurementInterval = TimeSpan.FromSeconds(
+        RegistrySettings.ReadNtpCheckIntervalSeconds(ServiceDefaults.ServiceName));
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        Log.ServiceStarting(logger, ServiceDefaults.ServiceName, ntpClient.Server, MeasurementInterval);
+        Log.ServiceStarting(logger, ServiceDefaults.ServiceName, ntpClient.Server, measurementInterval);
 
         // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
         // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
@@ -51,7 +53,7 @@ public class Worker(
     {
         // Startup ran during StartAsync and logged a fresh drift measurement; wait one full
         // interval before the next so we don't double-measure right after boot.
-        using var timer = new PeriodicTimer(MeasurementInterval);
+        using var timer = new PeriodicTimer(measurementInterval);
         while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
         {
             await MeasureAndLogAsync(stoppingToken);

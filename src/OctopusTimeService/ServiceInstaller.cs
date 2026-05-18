@@ -12,6 +12,7 @@ internal static class ServiceInstaller
         var serviceName = ServiceDefaults.ServiceName;
         string? executablePath = null;
         var dependents = new List<string>();
+        var ntpCheckIntervalSeconds = RegistrySettings.DefaultNtpCheckIntervalSeconds;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -29,6 +30,12 @@ internal static class ServiceInstaller
                 case "--dependent":
                     if (!TryGetValue(args, ref i, out var depValue)) return ArgError("--dependent requires a value");
                     dependents.Add(depValue);
+                    break;
+                case "--ntpCheckInterval":
+                    if (!TryGetValue(args, ref i, out var intervalValue)) return ArgError("--ntpCheckInterval requires a value");
+                    if (!int.TryParse(intervalValue, out var parsedInterval) || parsedInterval <= 0)
+                        return ArgError($"--ntpCheckInterval must be a positive integer (got '{intervalValue}').");
+                    ntpCheckIntervalSeconds = parsedInterval;
                     break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
@@ -86,6 +93,23 @@ internal static class ServiceInstaller
 
         Console.WriteLine($"Service '{serviceName}' installed.");
 
+        // Persist install-time configuration into the service's registry key (sc.exe just
+        // created it), so uninstall can recover --dependent and the worker can read its
+        // interval at runtime without re-passing flags.
+        try
+        {
+            RegistrySettings.WriteDependents(serviceName, dependents);
+            RegistrySettings.WriteNtpCheckIntervalSeconds(serviceName, ntpCheckIntervalSeconds);
+            Console.WriteLine($"  NtpCheckIntervalSeconds = {ntpCheckIntervalSeconds}");
+            if (dependents.Count > 0)
+                Console.WriteLine($"  Dependents = {string.Join(",", dependents)}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to write configuration to registry: {ex.Message}");
+            return 1;
+        }
+
         var depFailures = 0;
         foreach (var dep in dependents)
         {
@@ -106,6 +130,7 @@ internal static class ServiceInstaller
     {
         var serviceName = ServiceDefaults.ServiceName;
         var dependents = new List<string>();
+        var dependentsSpecified = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -118,9 +143,22 @@ internal static class ServiceInstaller
                 case "--dependent":
                     if (!TryGetValue(args, ref i, out var depValue)) return ArgError("--dependent requires a value");
                     dependents.Add(depValue);
+                    dependentsSpecified = true;
                     break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
+            }
+        }
+
+        // Recover the dependent list captured at install time if the caller didn't
+        // pass --dependent, so uninstalling doesn't require remembering the same flags.
+        if (!dependentsSpecified)
+        {
+            var recovered = RegistrySettings.ReadDependents(serviceName);
+            if (recovered.Count > 0)
+            {
+                dependents.AddRange(recovered);
+                Console.WriteLine($"Recovered dependents from registry: {string.Join(",", recovered)}");
             }
         }
 
@@ -144,6 +182,10 @@ internal static class ServiceInstaller
             Console.Error.WriteLine($"sc.exe delete failed with exit code {exitCode}");
             return exitCode;
         }
+
+        // sc.exe delete normally removes the key, but explicitly clear it so any custom
+        // values we wrote (Dependents, NtpCheckIntervalSeconds) cannot survive uninstall.
+        RegistrySettings.DeleteServiceKey(serviceName);
 
         Console.WriteLine($"Service '{serviceName}' uninstalled.");
 
