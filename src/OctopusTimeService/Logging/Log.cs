@@ -36,6 +36,10 @@ internal static partial class Log
         Message = "Failed to measure clock drift against {Server}")]
     public static partial void ClockDriftFailed(ILogger logger, string server, Exception ex);
 
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Information,
+        Message = "MonitorOnly mode: skipping startup sequence, observation only")]
+    public static partial void MonitorOnlyMode(ILogger logger);
+
     // -------- StartupSequence (2000-2099) --------
 
     [LoggerMessage(EventId = 2001, Level = LogLevel.Information,

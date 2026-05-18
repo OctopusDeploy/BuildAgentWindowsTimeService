@@ -78,6 +78,7 @@ manually.
 | `--executable <path>`      | current exe          | Path SCM should record as the service binary. |
 | `--dependent <name>`       | (none)               | Name of an existing service that should depend on this one. May be specified multiple times. The named service is modified so SCM will start this service before it. |
 | `--ntpCheckInterval <sec>` | `30`                 | How often the steady-state loop measures drift, in seconds. |
+| `--monitorOnly`            | off                  | Switch flag. When set, the service skips the startup resync/lockdown sequence; it just takes one drift reading at start and then enters the steady-state measurement loop. Use this when you want to observe an agent without touching `W32Time`, `vmictimesync`, or the time-sync scheduled tasks. |
 
 ### Uninstall flags
 
@@ -110,6 +111,7 @@ HKLM\SYSTEM\CurrentControlSet\Services\<serviceName>
 | ------------------------- | --------- | ------- |
 | `Dependents`              | REG_SZ    | Comma-separated list of services that depend on this one; written by `install --dependent ...` and read back by `uninstall` when `--dependent` is not passed. |
 | `NtpCheckIntervalSeconds` | REG_DWORD | Drift-check interval in seconds. The service reads this on startup; missing or zero/negative values fall back to 30 seconds. |
+| `MonitorOnly`             | REG_DWORD | `1` if `--monitorOnly` was passed at install, `0` otherwise. When `1`, the worker skips the startup sequence and just observes. |
 
 The whole subkey is deleted on uninstall.
 

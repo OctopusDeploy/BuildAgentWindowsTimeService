@@ -13,6 +13,7 @@ internal static class ServiceInstaller
         string? executablePath = null;
         var dependents = new List<string>();
         var ntpCheckIntervalSeconds = RegistrySettings.DefaultNtpCheckIntervalSeconds;
+        var monitorOnly = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -36,6 +37,9 @@ internal static class ServiceInstaller
                     if (!int.TryParse(intervalValue, out var parsedInterval) || parsedInterval <= 0)
                         return ArgError($"--ntpCheckInterval must be a positive integer (got '{intervalValue}').");
                     ntpCheckIntervalSeconds = parsedInterval;
+                    break;
+                case "--monitorOnly":
+                    monitorOnly = true;
                     break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
@@ -100,7 +104,9 @@ internal static class ServiceInstaller
         {
             RegistrySettings.WriteDependents(serviceName, dependents);
             RegistrySettings.WriteNtpCheckIntervalSeconds(serviceName, ntpCheckIntervalSeconds);
+            RegistrySettings.WriteMonitorOnly(serviceName, monitorOnly);
             Console.WriteLine($"  NtpCheckIntervalSeconds = {ntpCheckIntervalSeconds}");
+            Console.WriteLine($"  MonitorOnly = {(monitorOnly ? 1 : 0)}");
             if (dependents.Count > 0)
                 Console.WriteLine($"  Dependents = {string.Join(",", dependents)}");
         }

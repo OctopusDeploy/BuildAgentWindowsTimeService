@@ -12,6 +12,7 @@ internal static class RegistrySettings
 
     public const string DependentsValueName = "Dependents";
     public const string NtpCheckIntervalSecondsValueName = "NtpCheckIntervalSeconds";
+    public const string MonitorOnlyValueName = "MonitorOnly";
 
     public const int DefaultNtpCheckIntervalSeconds = 30;
 
@@ -55,6 +56,29 @@ internal static class RegistrySettings
             // Fall through to default.
         }
         return DefaultNtpCheckIntervalSeconds;
+    }
+
+    public static void WriteMonitorOnly(string serviceName, bool enabled)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(KeyPath(serviceName), writable: true)
+            ?? throw new InvalidOperationException(
+                $@"Registry key HKLM\{KeyPath(serviceName)} does not exist; service was not created.");
+        key.SetValue(MonitorOnlyValueName, enabled ? 1 : 0, RegistryValueKind.DWord);
+    }
+
+    public static bool ReadMonitorOnly(string serviceName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(KeyPath(serviceName));
+            if (key?.GetValue(MonitorOnlyValueName) is int v)
+                return v != 0;
+        }
+        catch
+        {
+            // Fall through to default.
+        }
+        return false;
     }
 
     /// <summary>

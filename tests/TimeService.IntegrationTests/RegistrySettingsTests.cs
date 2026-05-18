@@ -80,6 +80,53 @@ public class RegistrySettingsTests(PublishedExeFixture fixture)
     }
 
     [SkippableFact]
+    public void Install_without_monitorOnly_writes_MonitorOnly_zero()
+    {
+        Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");
+
+        var serviceName = $"OctopusTimeService_Test_{Guid.NewGuid():N}";
+        var installed = false;
+        try
+        {
+            Assert.Equal(0, RunExe(fixture.ExePath, ["install", "--serviceName", serviceName]));
+            installed = true;
+
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ServicesRoot}\{serviceName}");
+            Assert.NotNull(key);
+            Assert.Equal(0, key!.GetValue("MonitorOnly"));
+            Assert.Equal(RegistryValueKind.DWord, key.GetValueKind("MonitorOnly"));
+        }
+        finally
+        {
+            if (installed) RunExe(fixture.ExePath, ["uninstall", "--serviceName", serviceName]);
+        }
+    }
+
+    [SkippableFact]
+    public void Install_with_monitorOnly_writes_MonitorOnly_one()
+    {
+        Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");
+
+        var serviceName = $"OctopusTimeService_Test_{Guid.NewGuid():N}";
+        var installed = false;
+        try
+        {
+            Assert.Equal(0, RunExe(fixture.ExePath,
+                ["install", "--serviceName", serviceName, "--monitorOnly"]));
+            installed = true;
+
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ServicesRoot}\{serviceName}");
+            Assert.NotNull(key);
+            Assert.Equal(1, key!.GetValue("MonitorOnly"));
+            Assert.Equal(RegistryValueKind.DWord, key.GetValueKind("MonitorOnly"));
+        }
+        finally
+        {
+            if (installed) RunExe(fixture.ExePath, ["uninstall", "--serviceName", serviceName]);
+        }
+    }
+
+    [SkippableFact]
     public void Install_writes_Dependents_csv_to_registry()
     {
         Skip.IfNot(IsAdministrator(), "Requires an elevated (administrator) test runner to register Windows services.");

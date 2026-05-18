@@ -77,6 +77,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("                                          --dependent <name>        target service to make depend on us");
     writer.WriteLine("                                                                    (may be specified multiple times)");
     writer.WriteLine("                                          --ntpCheckInterval <sec>  NTP drift-check interval (default: 30)");
+    writer.WriteLine("                                          --monitorOnly             skip the startup resync/lockdown");
+    writer.WriteLine("                                                                    sequence; just measure and log");
     writer.WriteLine("  OctopusTimeService uninstall [flags]  Unregister the Windows service.");
     writer.WriteLine("                                          --serviceName <name>      (default: OctopusTimeService)");
     writer.WriteLine("                                          --dependent <name>        target service to strip us from");
