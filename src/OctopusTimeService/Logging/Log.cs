@@ -5,7 +5,8 @@ namespace TimeService.Logging;
 /// <summary>
 /// Source-generated logging for the service. Each entry has a stable EventId so individual
 /// events are identifiable in the Windows Event Log.
-/// Ranges: 1000-1099 Worker, 2000-2099 StartupSequence, 3000-3099 WindowsServiceOps.
+/// Ranges: 1000-1099 Worker, 2000-2099 StartupSequence, 3000-3099 WindowsServiceOps,
+/// 4000-4099 ScheduledTaskOps.
 /// </summary>
 internal static partial class Log
 {
@@ -138,4 +139,30 @@ internal static partial class Log
     [LoggerMessage(EventId = 3013, Level = LogLevel.Error,
         Message = "sc config '{Service}' start= {Mode} failed (exit {ExitCode})")]
     public static partial void ScConfigFailed(ILogger logger, string service, string mode, int exitCode);
+
+    // -------- ScheduledTaskOps (4000-4099) --------
+
+    [LoggerMessage(EventId = 4001, Level = LogLevel.Information,
+        Message = "Disabling scheduled task '{TaskPath}'")]
+    public static partial void DisablingScheduledTask(ILogger logger, string taskPath);
+
+    [LoggerMessage(EventId = 4002, Level = LogLevel.Information,
+        Message = "Scheduled task '{TaskPath}' disabled")]
+    public static partial void ScheduledTaskDisabled(ILogger logger, string taskPath);
+
+    [LoggerMessage(EventId = 4003, Level = LogLevel.Warning,
+        Message = "schtasks failed to disable '{TaskPath}' (exit {ExitCode}); continuing")]
+    public static partial void ScheduledTaskDisableFailed(ILogger logger, string taskPath, int exitCode);
+
+    [LoggerMessage(EventId = 4004, Level = LogLevel.Warning,
+        Message = "Error disabling scheduled task '{TaskPath}'; continuing")]
+    public static partial void ScheduledTaskDisableError(ILogger logger, string taskPath, Exception ex);
+
+    [LoggerMessage(EventId = 4005, Level = LogLevel.Debug,
+        Message = "[schtasks] {Line}")]
+    public static partial void SchtasksStdOut(ILogger logger, string line);
+
+    [LoggerMessage(EventId = 4006, Level = LogLevel.Information,
+        Message = "[schtasks] {Line}")]
+    public static partial void SchtasksStdErr(ILogger logger, string line);
 }

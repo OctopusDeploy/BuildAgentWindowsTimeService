@@ -14,6 +14,12 @@ public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient n
     private const string WindowsTimeService = "W32Time";
     private const string HyperVTimeSyncService = "vmictimesync";
 
+    private static readonly string[] TimeSyncScheduledTasks =
+    [
+        @"\Microsoft\Windows\Time Synchronization\ForceSynchronizeTime",
+        @"\Microsoft\Windows\Time Synchronization\SynchronizeTime",
+    ];
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         Log.StartupBeginning(logger);
@@ -43,6 +49,15 @@ public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient n
         else
         {
             Log.SkippingW32tm(logger, WindowsTimeService);
+        }
+
+        // Disable the Windows Time Synchronization scheduled tasks so they don't relaunch
+        // a sync behind our back. Best-effort: missing tasks and schtasks failures are logged
+        // by ScheduledTaskOps and swallowed.
+        var schTaskOps = new ScheduledTaskOps(logger);
+        foreach (var taskPath in TimeSyncScheduledTasks)
+        {
+            await schTaskOps.DisableAsync(taskPath, cancellationToken);
         }
 
         // Lock both back down. Best-effort: log failures, don't throw.
