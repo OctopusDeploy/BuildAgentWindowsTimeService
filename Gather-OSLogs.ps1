@@ -1,7 +1,7 @@
 # Gather-OSLogs.ps1
 #
 # Collects OS-level provisioning / early-boot logs into C:\Octopus\TimeService\OSLogs
-# preserving the directory structure relative to %windir%.
+# preserving the directory structure relative to $WinDir.
 #
 # Compatible with Windows PowerShell (Desktop) 3.0+ on Windows Server 2012, 2016, 2019, 2022.
 
@@ -12,10 +12,10 @@ $ErrorActionPreference = 'Continue'
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$WinDir     = $env:windir                       # %windir%
-$SystemRoot = $env:SystemRoot                    # %SystemRoot% -- same directory as %windir%, kept separate to mirror Microsoft's notation
+$WinDir     = $env:windir
+$SystemRoot = $env:SystemRoot
 $BaseDir    = 'C:\Octopus\TimeService'
-$OutputRoot = Join-Path $BaseDir 'OSLogs'
+$OutputRoot = Join-Path $BaseDir 'Windows'
 $LogFile    = Join-Path $BaseDir 'oslog-copy.log'
 $MaxAttempts = 3
 $RetryDelaySeconds = 2
@@ -67,8 +67,8 @@ function Invoke-WithRetry {
     return $false
 }
 
-# Maps a source path under %windir% to its destination under $OutputRoot,
-# preserving the structure relative to %windir%.
+# Maps a source path under $WinDir to its destination under $OutputRoot,
+# preserving the structure relative to $WinDir.
 function Get-DestinationPath {
     param([string]$SourceFullPath)
 
@@ -77,7 +77,7 @@ function Get-DestinationPath {
         $SourceFullPath.Substring(0, $base.Length).ToLower() -eq $base.ToLower()) {
         $relative = $SourceFullPath.Substring($base.Length).TrimStart('\')
     } else {
-        # Fallback for anything not under %windir%: strip the drive qualifier.
+        # Fallback for anything not under $WinDir: strip the drive qualifier.
         $relative = $SourceFullPath -replace '^[A-Za-z]:[\\/]', ''
     }
 
@@ -225,7 +225,7 @@ function Copy-SourceItem {
 }
 
 # ---------------------------------------------------------------------------
-# Sources to collect (relative to %windir%).
+# Sources to collect (relative to $WinDir).
 # The two .evtx files are given a wevtutil export fallback for when the live
 # Event Log service holds them open. Panther\UnattendGC lives under Panther;
 # the de-dupe guard in Copy-OneFile prevents a double copy.
@@ -272,4 +272,13 @@ foreach ($entry in $SourceItems) {
 
 Write-Log ("INFO  Collection finished. Copied={0} Failed={1} Skipped={2}" -f `
     $script:Stats.Copied, $script:Stats.Failed, $script:Stats.Skipped)
+
+# Tell TeamCity to upload the collected logs as a build artifact.
+# Uses TeamCity artifact-path syntax 'source => target'; '.zip' target zips it.
+# This only has an effect when stdout is read by a TeamCity build agent;
+# otherwise it's just a harmless printed line.
+$artifactSpec = "$BaseDir => OSLogs.zip"
+Write-Host ("##teamcity[publishArtifacts '{0}']" -f $artifactSpec)
+Write-Log ("INFO  Emitted TeamCity publishArtifacts service message for '{0}'" -f $artifactSpec)
+
 Write-Log "=========================================================="
