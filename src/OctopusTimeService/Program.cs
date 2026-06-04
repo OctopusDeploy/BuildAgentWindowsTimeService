@@ -48,7 +48,10 @@ static int RunAsService(string[] forwardedArgs)
     // Information-level drift measurements reach the Windows Event Log.
     builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
     builder.Services.AddSingleton(_ => new NtpClient());
-    builder.Services.AddSingleton<StartupSequence>();
+    builder.Services.AddSingleton(sp => new StartupSequence(
+        sp.GetRequiredService<ILogger<StartupSequence>>(),
+        sp.GetRequiredService<NtpClient>(),
+        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;
@@ -58,7 +61,10 @@ static int RunAsConsole(string[] forwardedArgs)
 {
     var builder = Host.CreateApplicationBuilder(forwardedArgs);
     builder.Services.AddSingleton(_ => new NtpClient());
-    builder.Services.AddSingleton<StartupSequence>();
+    builder.Services.AddSingleton(sp => new StartupSequence(
+        sp.GetRequiredService<ILogger<StartupSequence>>(),
+        sp.GetRequiredService<NtpClient>(),
+        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;

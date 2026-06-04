@@ -5,7 +5,7 @@ namespace TimeService.Ntp;
 /// <summary>
 /// Measures clock drift between the local machine and an NTP server using SNTP/NTPv4.
 /// </summary>
-public sealed class NtpClient
+public class NtpClient
 {
     public const string DefaultServer = "time.windows.com";
     public const int NtpPort = 123;
@@ -26,7 +26,7 @@ public sealed class NtpClient
     /// Measures local clock drift against the configured NTP server.
     /// Returns the offset (server-time minus local-time) and the margin of error.
     /// </summary>
-    public async Task<NtpDriftResult> MeasureDriftAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<NtpDriftResult> MeasureDriftAsync(CancellationToken cancellationToken = default)
     {
         var request = NtpPacket.CreateClientRequest();
 

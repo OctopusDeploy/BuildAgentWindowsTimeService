@@ -9,48 +9,16 @@ public class Worker(
     NtpClient ntpClient,
     StartupSequence startupSequence) : BackgroundService
 {
-    private static readonly TimeSpan StartupBudget = TimeSpan.FromMinutes(3);
-
     private readonly TimeSpan measurementInterval = TimeSpan.FromSeconds(
         RegistrySettings.ReadNtpCheckIntervalSeconds(ServiceDefaults.ServiceName));
-
-    private readonly bool monitorOnly =
-        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName);
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         Log.ServiceStarting(logger, ServiceDefaults.ServiceName, ntpClient.Server, measurementInterval);
 
-        if (monitorOnly)
-        {
-            // Pure observation: skip the resync/lockdown work and just take a baseline reading
-            // so we still have a fresh sample at boot before the loop's first interval elapses.
-            Log.MonitorOnlyMode(logger);
-            await MeasureAndLogAsync(cancellationToken);
-        }
-        else
-        {
-            // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
-            // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
-            //
-            // A failed or hung startup sequence must not prevent the service from coming up,
-            // so we cap it at StartupBudget and swallow anything that isn't a real shutdown.
-            using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            startupCts.CancelAfter(StartupBudget);
-            try
-            {
-                await startupSequence.RunAsync(startupCts.Token);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Host is genuinely shutting down — propagate so the host can abort start.
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Log.StartupSequenceFailed(logger, StartupBudget, ex);
-            }
-        }
+        // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
+        // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
+        await startupSequence.RunAsync(cancellationToken);
 
         await base.StartAsync(cancellationToken);
     }
