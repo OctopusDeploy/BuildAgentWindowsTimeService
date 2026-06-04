@@ -7,11 +7,12 @@ namespace TimeService.Logging;
 /// Columns: LocalTime, NtpTime (ISO 8601, UTC), Drift, MarginOfError (TimeSpan round-trip format).
 /// Write failures are logged and swallowed so a locked/unwritable file never disrupts measurement.
 /// </summary>
-public sealed class DriftCsvLog(ILogger<DriftCsvLog> logger, string filePath = DriftCsvLog.DefaultPath)
+public sealed class DriftCsvLog(ILogger<DriftCsvLog> logger, string directory)
 {
-    public const string DefaultPath = @"C:\Octopus\TimeService\ntp-drift.csv";
+    public const string FileName = "ntp-drift.csv";
     private const string Header = "LocalTime,NtpTime,Drift,MarginOfError";
 
+    private readonly string filePath = Path.Combine(directory, FileName);
     private readonly Lock gate = new();
 
     /// <summary>

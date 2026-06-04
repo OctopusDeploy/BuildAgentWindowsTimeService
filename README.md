@@ -43,9 +43,11 @@ the service name. Each log entry has a stable Event ID; the ranges are:
 Every drift measurement — whether taken at startup (`pre-resync`,
 `post-resync`, `monitor-only`) or by the steady-state loop — is logged
 under Event ID **1005** (or **1006** on failure), with the phase named in
-the message. The same measurements are also appended to a CSV log at
-`C:\Octopus\TimeService\ntp-drift.csv`
-(columns: `LocalTime,NtpTime,Drift,MarginOfError`).
+the message. The same measurements are also appended to a CSV log named
+`ntp-drift.csv` (columns: `LocalTime,NtpTime,Drift,MarginOfError`). The
+folder for that file is set at install time with `--logFolder` and stored
+in the registry value `LogFolder`; if omitted it defaults to
+`C:\Octopus\TimeService`.
 
 ## Installation
 

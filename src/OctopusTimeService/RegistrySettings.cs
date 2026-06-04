@@ -13,8 +13,10 @@ internal static class RegistrySettings
     public const string DependentsValueName = "Dependents";
     public const string NtpCheckIntervalSecondsValueName = "NtpCheckIntervalSeconds";
     public const string MonitorOnlyValueName = "MonitorOnly";
+    public const string LogFolderValueName = "LogFolder";
 
     public const int DefaultNtpCheckIntervalSeconds = 30;
+    public const string DefaultLogFolder = @"C:\Octopus\TimeService";
 
     private static string KeyPath(string serviceName) => $@"{ServicesRegistryRoot}\{serviceName}";
 
@@ -81,9 +83,32 @@ internal static class RegistrySettings
         return false;
     }
 
+    public static void WriteLogFolder(string serviceName, string folder)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(KeyPath(serviceName), writable: true)
+            ?? throw new InvalidOperationException(
+                $@"Registry key HKLM\{KeyPath(serviceName)} does not exist; service was not created.");
+        key.SetValue(LogFolderValueName, folder, RegistryValueKind.String);
+    }
+
+    public static string ReadLogFolder(string serviceName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(KeyPath(serviceName));
+            if (key?.GetValue(LogFolderValueName) is string folder && !string.IsNullOrWhiteSpace(folder))
+                return folder;
+        }
+        catch
+        {
+            // Fall through to default.
+        }
+        return DefaultLogFolder;
+    }
+
     /// <summary>
     /// Removes the service's registry key after sc.exe delete, so any custom values
-    /// (Dependents, NtpCheckIntervalSeconds) we wrote are not left behind. No-op if missing.
+    /// (Dependents, NtpCheckIntervalSeconds, LogFolder) we wrote are not left behind. No-op if missing.
     /// </summary>
     public static void DeleteServiceKey(string serviceName)
     {

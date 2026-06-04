@@ -14,6 +14,7 @@ internal static class ServiceInstaller
         var dependents = new List<string>();
         var ntpCheckIntervalSeconds = RegistrySettings.DefaultNtpCheckIntervalSeconds;
         var monitorOnly = false;
+        var logFolder = RegistrySettings.DefaultLogFolder;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -41,6 +42,11 @@ internal static class ServiceInstaller
                 case "--monitorOnly":
                     monitorOnly = true;
                     break;
+                case "--logFolder":
+                    if (!TryGetValue(args, ref i, out var logFolderValue)) return ArgError("--logFolder requires a value");
+                    if (string.IsNullOrWhiteSpace(logFolderValue)) return ArgError("--logFolder must not be empty.");
+                    logFolder = logFolderValue;
+                    break;
                 default:
                     return ArgError($"Unknown argument: {args[i]}");
             }
@@ -59,6 +65,10 @@ internal static class ServiceInstaller
             Console.Error.WriteLine($"Executable not found: {executablePath}");
             return 1;
         }
+
+        // Normalise the log folder to an absolute path: the service runs under SCM with a
+        // different working directory, so a relative path would resolve unpredictably at runtime.
+        logFolder = Path.GetFullPath(logFolder);
 
         // Pre-validate dependents before we make any changes.
         foreach (var dep in dependents)
@@ -105,8 +115,10 @@ internal static class ServiceInstaller
             RegistrySettings.WriteDependents(serviceName, dependents);
             RegistrySettings.WriteNtpCheckIntervalSeconds(serviceName, ntpCheckIntervalSeconds);
             RegistrySettings.WriteMonitorOnly(serviceName, monitorOnly);
+            RegistrySettings.WriteLogFolder(serviceName, logFolder);
             Console.WriteLine($"  NtpCheckIntervalSeconds = {ntpCheckIntervalSeconds}");
             Console.WriteLine($"  MonitorOnly = {(monitorOnly ? 1 : 0)}");
+            Console.WriteLine($"  LogFolder = {logFolder}");
             if (dependents.Count > 0)
                 Console.WriteLine($"  Dependents = {string.Join(",", dependents)}");
         }

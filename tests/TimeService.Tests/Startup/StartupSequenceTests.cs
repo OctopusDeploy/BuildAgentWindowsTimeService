@@ -7,11 +7,11 @@ namespace TimeService.Tests.Startup;
 
 public class StartupSequenceTests
 {
-    // CSV log pointed at a throwaway temp path so the shared measure-and-log path doesn't
+    // CSV log pointed at a throwaway temp folder so the shared measure-and-log path doesn't
     // touch the real C:\Octopus location during tests.
     private static DriftCsvLog TempCsvLog() =>
         new(NullLogger<DriftCsvLog>.Instance,
-            Path.Combine(Path.GetTempPath(), $"octopus-timeservice-tests-{Guid.NewGuid():N}.csv"));
+            Path.Combine(Path.GetTempPath(), $"octopus-timeservice-tests-{Guid.NewGuid():N}"));
 
     [Fact]
     public async Task Monitor_only_takes_exactly_one_drift_measurement_and_skips_full_startup()
