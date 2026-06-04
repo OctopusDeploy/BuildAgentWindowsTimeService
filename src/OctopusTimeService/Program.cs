@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging.EventLog;
 using TimeService;
+using TimeService.Logging;
 using TimeService.Ntp;
 using TimeService.Startup;
 
@@ -48,9 +49,11 @@ static int RunAsService(string[] forwardedArgs)
     // Information-level drift measurements reach the Windows Event Log.
     builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
     builder.Services.AddSingleton(_ => new NtpClient());
+    builder.Services.AddSingleton(sp => new DriftCsvLog(sp.GetRequiredService<ILogger<DriftCsvLog>>()));
     builder.Services.AddSingleton(sp => new StartupSequence(
         sp.GetRequiredService<ILogger<StartupSequence>>(),
         sp.GetRequiredService<NtpClient>(),
+        sp.GetRequiredService<DriftCsvLog>(),
         RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
@@ -61,9 +64,11 @@ static int RunAsConsole(string[] forwardedArgs)
 {
     var builder = Host.CreateApplicationBuilder(forwardedArgs);
     builder.Services.AddSingleton(_ => new NtpClient());
+    builder.Services.AddSingleton(sp => new DriftCsvLog(sp.GetRequiredService<ILogger<DriftCsvLog>>()));
     builder.Services.AddSingleton(sp => new StartupSequence(
         sp.GetRequiredService<ILogger<StartupSequence>>(),
         sp.GetRequiredService<NtpClient>(),
+        sp.GetRequiredService<DriftCsvLog>(),
         RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();

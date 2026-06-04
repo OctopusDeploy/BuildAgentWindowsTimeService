@@ -7,7 +7,8 @@ namespace TimeService;
 public class Worker(
     ILogger<Worker> logger,
     NtpClient ntpClient,
-    StartupSequence startupSequence) : BackgroundService
+    StartupSequence startupSequence,
+    DriftCsvLog driftCsvLog) : BackgroundService
 {
     private readonly TimeSpan measurementInterval = TimeSpan.FromSeconds(
         RegistrySettings.ReadNtpCheckIntervalSeconds(ServiceDefaults.ServiceName));
@@ -37,16 +38,31 @@ public class Worker(
         using var timer = new PeriodicTimer(measurementInterval);
         while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await MeasureAndLogAsync(stoppingToken);
+            await MeasureAndLogDriftAsync(logger, ntpClient, driftCsvLog, "steady-state", stoppingToken);
         }
     }
 
-    private async Task MeasureAndLogAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Takes a single NTP drift measurement and records it to both the Windows Event Log and the
+    /// on-disk CSV log. Shared by the steady-state loop and <see cref="StartupSequence"/> so every
+    /// measurement, whatever its origin, lands in both sinks identically. <paramref name="phase"/>
+    /// labels the measurement in the event log (e.g. "steady-state", "pre-resync", "post-resync").
+    /// Measurement failures are logged and swallowed; host cancellation is propagated.
+    /// </summary>
+    public static async Task MeasureAndLogDriftAsync(
+        ILogger logger,
+        NtpClient ntpClient,
+        DriftCsvLog driftCsvLog,
+        string phase,
+        CancellationToken cancellationToken)
     {
         try
         {
             var result = await ntpClient.MeasureDriftAsync(cancellationToken);
-            Log.ClockDrift(logger, ntpClient.Server, result.Drift, result.MarginOfError);
+            var localTime = DateTime.UtcNow;
+            var ntpTime = localTime + result.Drift;
+            Log.ClockDrift(logger, phase, ntpClient.Server, result.Drift, result.MarginOfError);
+            driftCsvLog.Append(localTime, ntpTime, result.Drift, result.MarginOfError);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -54,7 +70,7 @@ public class Worker(
         }
         catch (Exception ex)
         {
-            Log.ClockDriftFailed(logger, ntpClient.Server, ex);
+            Log.ClockDriftFailed(logger, phase, ntpClient.Server, ex);
         }
     }
 }

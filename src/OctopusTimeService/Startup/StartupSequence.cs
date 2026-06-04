@@ -11,7 +11,11 @@ namespace TimeService.Startup;
 /// In monitorOnly mode the resync/lockdown work is skipped and only a baseline
 /// drift sample is taken.
 /// </summary>
-public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient ntpClient, bool monitorOnly)
+public sealed class StartupSequence(
+    ILogger<StartupSequence> logger,
+    NtpClient ntpClient,
+    DriftCsvLog driftCsvLog,
+    bool monitorOnly)
 {
     private const string WindowsTimeService = "W32Time";
     private const string HyperVTimeSyncService = "vmictimesync";
@@ -36,7 +40,8 @@ public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient n
             Action<ILogger> logEvt = monitorOnly ? Log.MonitorOnlyMode : Log.StartupBeginning;
             logEvt(logger);
 
-            await MeasureAndLogDriftAsync(monitorOnly ? "monitor-only" : "pre-resync", cancellationToken);
+            await Worker.MeasureAndLogDriftAsync(
+                logger, ntpClient, driftCsvLog, monitorOnly ? "monitor-only" : "pre-resync", cancellationToken);
 
             // Any operation which modifies the state of the system should be after this line.
             if (monitorOnly) return;
@@ -82,7 +87,7 @@ public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient n
                 await ops.StopAndDisableAsync(HyperVTimeSyncService, cancellationToken);
             }
 
-            await MeasureAndLogDriftAsync("post-resync", cancellationToken);
+            await Worker.MeasureAndLogDriftAsync(logger, ntpClient, driftCsvLog, "post-resync", cancellationToken);
 
             Log.StartupComplete(logger);
         }
@@ -94,28 +99,6 @@ public sealed class StartupSequence(ILogger<StartupSequence> logger, NtpClient n
         catch (Exception ex)
         {
             Log.StartupSequenceFailed(logger, StartupBudget, ex);
-        }
-    }
-
-    private async Task RunFullStartupAsync(CancellationToken cancellationToken)
-    {
-        
-    }
-
-    private async Task MeasureAndLogDriftAsync(string phase, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await ntpClient.MeasureDriftAsync(cancellationToken);
-            Log.ClockDriftPhase(logger, phase, ntpClient.Server, result.Drift, result.MarginOfError);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Log.ClockDriftPhaseFailed(logger, phase, ntpClient.Server, ex);
         }
     }
 
