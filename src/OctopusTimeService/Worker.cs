@@ -7,50 +7,19 @@ namespace TimeService;
 public class Worker(
     ILogger<Worker> logger,
     NtpClient ntpClient,
-    StartupSequence startupSequence) : BackgroundService
+    StartupSequence startupSequence,
+    DriftCsvLog driftCsvLog) : BackgroundService
 {
-    private static readonly TimeSpan StartupBudget = TimeSpan.FromMinutes(3);
-
     private readonly TimeSpan measurementInterval = TimeSpan.FromSeconds(
         RegistrySettings.ReadNtpCheckIntervalSeconds(ServiceDefaults.ServiceName));
-
-    private readonly bool monitorOnly =
-        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName);
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         Log.ServiceStarting(logger, ServiceDefaults.ServiceName, ntpClient.Server, measurementInterval);
 
-        if (monitorOnly)
-        {
-            // Pure observation: skip the resync/lockdown work and just take a baseline reading
-            // so we still have a fresh sample at boot before the loop's first interval elapses.
-            Log.MonitorOnlyMode(logger);
-            await MeasureAndLogAsync(cancellationToken);
-        }
-        else
-        {
-            // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
-            // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
-            //
-            // A failed or hung startup sequence must not prevent the service from coming up,
-            // so we cap it at StartupBudget and swallow anything that isn't a real shutdown.
-            using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            startupCts.CancelAfter(StartupBudget);
-            try
-            {
-                await startupSequence.RunAsync(startupCts.Token);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Host is genuinely shutting down — propagate so the host can abort start.
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Log.StartupSequenceFailed(logger, StartupBudget, ex);
-            }
-        }
+        // Run startup inline so SCM (or the host in console mode) doesn't see us as Running
+        // until the startup sequence has finished. base.StartAsync then schedules ExecuteAsync.
+        await startupSequence.RunAsync(cancellationToken);
 
         await base.StartAsync(cancellationToken);
     }
@@ -69,16 +38,31 @@ public class Worker(
         using var timer = new PeriodicTimer(measurementInterval);
         while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await MeasureAndLogAsync(stoppingToken);
+            await MeasureAndLogDriftAsync(logger, ntpClient, driftCsvLog, "steady-state", stoppingToken);
         }
     }
 
-    private async Task MeasureAndLogAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Takes a single NTP drift measurement and records it to both the Windows Event Log and the
+    /// on-disk CSV log. Shared by the steady-state loop and <see cref="StartupSequence"/> so every
+    /// measurement, whatever its origin, lands in both sinks identically. <paramref name="phase"/>
+    /// labels the measurement in the event log (e.g. "steady-state", "pre-resync", "post-resync").
+    /// Measurement failures are logged and swallowed; host cancellation is propagated.
+    /// </summary>
+    public static async Task MeasureAndLogDriftAsync(
+        ILogger logger,
+        NtpClient ntpClient,
+        DriftCsvLog driftCsvLog,
+        string phase,
+        CancellationToken cancellationToken)
     {
         try
         {
             var result = await ntpClient.MeasureDriftAsync(cancellationToken);
-            Log.ClockDrift(logger, ntpClient.Server, result.Drift, result.MarginOfError);
+            var localTime = DateTime.UtcNow;
+            var ntpTime = localTime + result.Drift;
+            Log.ClockDrift(logger, phase, ntpClient.Server, result.Drift, result.MarginOfError);
+            driftCsvLog.Append(localTime, ntpTime, result.Drift, result.MarginOfError);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -86,7 +70,7 @@ public class Worker(
         }
         catch (Exception ex)
         {
-            Log.ClockDriftFailed(logger, ntpClient.Server, ex);
+            Log.ClockDriftFailed(logger, phase, ntpClient.Server, ex);
         }
     }
 }

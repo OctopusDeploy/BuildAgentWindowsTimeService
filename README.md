@@ -40,8 +40,14 @@ the service name. Each log entry has a stable Event ID; the ranges are:
 | 3000-3099 | WindowsServiceOps (start/stop/disable of `W32Time` etc.)    |
 | 4000-4099 | ScheduledTaskOps (disabling scheduled tasks)                |
 
-The steady-state drift measurement is Event ID **1005**; a failed
-measurement is **1006**.
+Every drift measurement — whether taken at startup (`pre-resync`,
+`post-resync`, `monitor-only`) or by the steady-state loop — is logged
+under Event ID **1005** (or **1006** on failure), with the phase named in
+the message. The same measurements are also appended to a CSV log named
+`ntp-drift.csv` (columns: `LocalTime,NtpTime,Drift,MarginOfError`). The
+folder for that file is set at install time with `--logFolder` and stored
+in the registry value `LogFolder`; if omitted it defaults to
+`C:\Octopus\TimeService`.
 
 ## Installation
 

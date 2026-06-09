@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging.EventLog;
 using TimeService;
+using TimeService.Logging;
 using TimeService.Ntp;
 using TimeService.Startup;
 
@@ -48,7 +49,14 @@ static int RunAsService(string[] forwardedArgs)
     // Information-level drift measurements reach the Windows Event Log.
     builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
     builder.Services.AddSingleton(_ => new NtpClient());
-    builder.Services.AddSingleton<StartupSequence>();
+    builder.Services.AddSingleton(sp => new DriftCsvLog(
+        sp.GetRequiredService<ILogger<DriftCsvLog>>(),
+        RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
+    builder.Services.AddSingleton(sp => new StartupSequence(
+        sp.GetRequiredService<ILogger<StartupSequence>>(),
+        sp.GetRequiredService<NtpClient>(),
+        sp.GetRequiredService<DriftCsvLog>(),
+        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;
@@ -58,7 +66,14 @@ static int RunAsConsole(string[] forwardedArgs)
 {
     var builder = Host.CreateApplicationBuilder(forwardedArgs);
     builder.Services.AddSingleton(_ => new NtpClient());
-    builder.Services.AddSingleton<StartupSequence>();
+    builder.Services.AddSingleton(sp => new DriftCsvLog(
+        sp.GetRequiredService<ILogger<DriftCsvLog>>(),
+        RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
+    builder.Services.AddSingleton(sp => new StartupSequence(
+        sp.GetRequiredService<ILogger<StartupSequence>>(),
+        sp.GetRequiredService<NtpClient>(),
+        sp.GetRequiredService<DriftCsvLog>(),
+        RegistrySettings.ReadMonitorOnly(ServiceDefaults.ServiceName)));
     builder.Services.AddHostedService<Worker>();
     builder.Build().Run();
     return 0;
@@ -79,6 +94,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("                                          --ntpCheckInterval <sec>  NTP drift-check interval (default: 30)");
     writer.WriteLine("                                          --monitorOnly             skip the startup resync/lockdown");
     writer.WriteLine("                                                                    sequence; just measure and log");
+    writer.WriteLine("                                          --logFolder <path>        folder for the drift CSV log");
+    writer.WriteLine($"                                                                    (default: {RegistrySettings.DefaultLogFolder})");
     writer.WriteLine("  OctopusTimeService uninstall [flags]  Unregister the Windows service.");
     writer.WriteLine("                                          --serviceName <name>      (default: OctopusTimeService)");
     writer.WriteLine("                                          --dependent <name>        target service to strip us from");

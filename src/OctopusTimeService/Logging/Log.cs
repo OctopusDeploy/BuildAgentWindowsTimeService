@@ -29,16 +29,20 @@ internal static partial class Log
     public static partial void ServiceStopped(ILogger logger, string serviceName);
 
     [LoggerMessage(EventId = 1005, Level = LogLevel.Information,
-        Message = "Clock drift against {Server}: {Drift} (±{Margin})")]
-    public static partial void ClockDrift(ILogger logger, string server, TimeSpan drift, TimeSpan margin);
+        Message = "Clock drift ({Phase}) against {Server}: {Drift} (±{Margin})")]
+    public static partial void ClockDrift(ILogger logger, string phase, string server, TimeSpan drift, TimeSpan margin);
 
     [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
-        Message = "Failed to measure clock drift against {Server}")]
-    public static partial void ClockDriftFailed(ILogger logger, string server, Exception ex);
+        Message = "Failed to measure clock drift ({Phase}) against {Server}")]
+    public static partial void ClockDriftFailed(ILogger logger, string phase, string server, Exception ex);
 
     [LoggerMessage(EventId = 1007, Level = LogLevel.Information,
         Message = "MonitorOnly mode: skipping startup sequence, observation only")]
     public static partial void MonitorOnlyMode(ILogger logger);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Warning,
+        Message = "Failed to write drift measurement to CSV log at {Path}")]
+    public static partial void DriftCsvWriteFailed(ILogger logger, string path, Exception ex);
 
     // -------- StartupSequence (2000-2099) --------
 
@@ -57,14 +61,6 @@ internal static partial class Log
     [LoggerMessage(EventId = 2004, Level = LogLevel.Information,
         Message = "Startup sequence complete")]
     public static partial void StartupComplete(ILogger logger);
-
-    [LoggerMessage(EventId = 2005, Level = LogLevel.Information,
-        Message = "Clock drift ({Phase}) against {Server}: {Drift} (±{Margin})")]
-    public static partial void ClockDriftPhase(ILogger logger, string phase, string server, TimeSpan drift, TimeSpan margin);
-
-    [LoggerMessage(EventId = 2006, Level = LogLevel.Warning,
-        Message = "Failed to measure clock drift ({Phase}) against {Server}")]
-    public static partial void ClockDriftPhaseFailed(ILogger logger, string phase, string server, Exception ex);
 
     [LoggerMessage(EventId = 2007, Level = LogLevel.Information,
         Message = "Running 'w32tm /resync /force'")]
