@@ -72,17 +72,17 @@ jobs:
           fail-on-error: true
 
       - name: Publish AOT exe
-        #if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: dotnet publish src/OctopusTimeService/OctopusTimeService.csproj --configuration Release --runtime win-x64 /p:Version=${{ steps.version.outputs.octoversion_fullsemver }} /p:AssemblyVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:FileVersion=${{ steps.version.outputs.octoversion_majorminorpatch }} /p:InformationalVersion=${{ steps.version.outputs.octoversion_informationalversion }} --output artifacts/publish
 
       # Only create releases from main branch, not for scheduled or manual runs.
       - name: Package release zip
-        #if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: Compress-Archive -Path artifacts/publish/*.exe -DestinationPath artifacts/OctopusTimeService.${{ steps.version.outputs.octoversion_fullsemver }}.zip
 
       # Only create releases from main branch, not for scheduled or manual runs.
       - name: Create GitHub Release
-        #if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           tag_name: ${{ steps.version.outputs.octoversion_fullsemver }}
