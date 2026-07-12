@@ -8,7 +8,8 @@ public class Worker(
     ILogger<Worker> logger,
     NtpClient ntpClient,
     StartupSequence startupSequence,
-    DriftCsvLog driftCsvLog) : BackgroundService
+    DriftCsvLog driftCsvLog,
+    ExcessDriftMonitor excessDriftMonitor) : BackgroundService
 {
     private readonly TimeSpan measurementInterval = TimeSpan.FromSeconds(
         RegistrySettings.ReadNtpCheckIntervalSeconds(ServiceDefaults.ServiceName));
@@ -38,7 +39,7 @@ public class Worker(
         using var timer = new PeriodicTimer(measurementInterval);
         while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await MeasureAndLogDriftAsync(logger, ntpClient, driftCsvLog, "steady-state", stoppingToken);
+            await MeasureAndLogDriftAsync(logger, ntpClient, driftCsvLog, "steady-state", stoppingToken, excessDriftMonitor);
         }
     }
 
@@ -47,14 +48,17 @@ public class Worker(
     /// on-disk CSV log. Shared by the steady-state loop and <see cref="StartupSequence"/> so every
     /// measurement, whatever its origin, lands in both sinks identically. <paramref name="phase"/>
     /// labels the measurement in the event log (e.g. "steady-state", "pre-resync", "post-resync").
-    /// Measurement failures are logged and swallowed; host cancellation is propagated.
+    /// When an <paramref name="excessDriftMonitor"/> is supplied, each successful measurement is fed
+    /// to it so it can track consecutive excess-drift streaks. Measurement failures are logged and
+    /// swallowed (and do not touch the monitor); host cancellation is propagated.
     /// </summary>
     public static async Task MeasureAndLogDriftAsync(
         ILogger logger,
         NtpClient ntpClient,
         DriftCsvLog driftCsvLog,
         string phase,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ExcessDriftMonitor? excessDriftMonitor = null)
     {
         try
         {
@@ -63,6 +67,7 @@ public class Worker(
             var ntpTime = localTime + result.Drift;
             Log.ClockDrift(logger, phase, ntpClient.Server, result.Drift, result.MarginOfError);
             driftCsvLog.Append(localTime, ntpTime, result.Drift, result.MarginOfError);
+            excessDriftMonitor?.Record(result.Drift);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
