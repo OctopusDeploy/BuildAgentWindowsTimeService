@@ -52,6 +52,9 @@ static int RunAsService(string[] forwardedArgs)
     builder.Services.AddSingleton(sp => new DriftCsvLog(
         sp.GetRequiredService<ILogger<DriftCsvLog>>(),
         RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
+    builder.Services.AddSingleton(sp => new ExcessDriftMonitor(
+        sp.GetRequiredService<ILogger<ExcessDriftMonitor>>(),
+        RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
     builder.Services.AddSingleton(sp => new StartupSequence(
         sp.GetRequiredService<ILogger<StartupSequence>>(),
         sp.GetRequiredService<NtpClient>(),
@@ -68,6 +71,9 @@ static int RunAsConsole(string[] forwardedArgs)
     builder.Services.AddSingleton(_ => new NtpClient());
     builder.Services.AddSingleton(sp => new DriftCsvLog(
         sp.GetRequiredService<ILogger<DriftCsvLog>>(),
+        RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
+    builder.Services.AddSingleton(sp => new ExcessDriftMonitor(
+        sp.GetRequiredService<ILogger<ExcessDriftMonitor>>(),
         RegistrySettings.ReadLogFolder(ServiceDefaults.ServiceName)));
     builder.Services.AddSingleton(sp => new StartupSequence(
         sp.GetRequiredService<ILogger<StartupSequence>>(),

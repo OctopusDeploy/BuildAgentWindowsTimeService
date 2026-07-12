@@ -5,8 +5,8 @@ namespace TimeService.Logging;
 /// <summary>
 /// Source-generated logging for the service. Each entry has a stable EventId so individual
 /// events are identifiable in the Windows Event Log.
-/// Ranges: 1000-1099 Worker, 2000-2099 StartupSequence, 3000-3099 WindowsServiceOps,
-/// 4000-4099 ScheduledTaskOps.
+/// Ranges: 1000-1099 Worker, 1500-1599 drift monitoring, 2000-2099 StartupSequence,
+/// 3000-3099 WindowsServiceOps, 4000-4099 ScheduledTaskOps.
 /// </summary>
 internal static partial class Log
 {
@@ -43,6 +43,16 @@ internal static partial class Log
     [LoggerMessage(EventId = 1008, Level = LogLevel.Warning,
         Message = "Failed to write drift measurement to CSV log at {Path}")]
     public static partial void DriftCsvWriteFailed(ILogger logger, string path, Exception ex);
+
+    // -------- Drift monitoring (1500-1599) --------
+
+    [LoggerMessage(EventId = 1500, Level = LogLevel.Error,
+        Message = "Excess Drift Detected")]
+    public static partial void ExcessDriftDetected(ILogger logger);
+
+    [LoggerMessage(EventId = 1501, Level = LogLevel.Warning,
+        Message = "Failed to write EXCESS_DRIFT marker file at {Path}")]
+    public static partial void ExcessDriftMarkerWriteFailed(ILogger logger, string path, Exception ex);
 
     // -------- StartupSequence (2000-2099) --------
 
